@@ -17,22 +17,26 @@
 
 	The Initial Developer of the Original Code is
 	Mark J Crane <markjcrane@fusionpbx.com>
-	Portions created by the Initial Developer are Copyright (C) 2008-2012
+	Portions created by the Initial Developer are Copyright (C) 2008-2017
 	the Initial Developer. All Rights Reserved.
 
 	Contributor(s):
 	Mark J Crane <markjcrane@fusionpbx.com>
 */
-require_once "root.php";
-require_once "resources/require.php";
-require_once "resources/check_auth.php";
-if (permission_exists('invoice_add') || permission_exists('invoice_edit')) {
-	//access granted
-}
-else {
-	echo "access denied";
-	exit;
-}
+
+//includes
+	require_once "root.php";
+	require_once "resources/require.php";
+	require_once "resources/check_auth.php";
+
+//check permissions
+	if (permission_exists('invoice_add') || permission_exists('invoice_edit')) {
+		//access granted
+	}
+	else {
+		echo "access denied";
+		exit;
+	}
 
 //add multi-lingual support
 	$language = new text;
@@ -54,6 +58,8 @@ else {
 		$invoice_type = check_str($_POST["invoice_type"]);
 		$contact_uuid_from = check_str($_POST["contact_uuid_from"]);
 		$contact_uuid_to = check_str($_POST["contact_uuid_to"]);
+		$invoice_purchase_order_number = check_str($_POST["invoice_purchase_order_number"]);
+		$invoice_currency = check_str($_POST["invoice_currency"]);
 		$invoice_notes = check_str($_POST["invoice_notes"]);
 	}
 
@@ -97,6 +103,8 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 				$sql .= "invoice_type, ";
 				$sql .= "contact_uuid_from, ";
 				$sql .= "contact_uuid_to, ";
+				$sql .= "invoice_purchase_order_number, ";
+				$sql .= "invoice_currency, ";
 				$sql .= "invoice_notes, ";
 				$sql .= "invoice_date ";
 				$sql .= ")";
@@ -108,6 +116,8 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 				$sql .= "'$invoice_type', ";
 				$sql .= "'$contact_uuid_from', ";
 				$sql .= "'$contact_uuid_to', ";
+				$sql .= "'$invoice_purchase_order_number', ";
+				$sql .= "'$invoice_currency', ";
 				$sql .= "'$invoice_notes', ";
 				$sql .= "now() ";
 				$sql .= ")";
@@ -117,7 +127,7 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 				//set redirect
 				$_SESSION['message'] = $text['message-add'];
 				header("Location: invoices.php");
-				exit;
+				return;
 
 			} //if ($action == "add")
 
@@ -140,6 +150,8 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 				$sql .= "invoice_type = '$invoice_type', ";
 				$sql .= "contact_uuid_from = '$contact_uuid_from', ";
 				$sql .= "contact_uuid_to = '$contact_uuid_to', ";
+				$sql .= "invoice_purchase_order_number = '$invoice_purchase_order_number', ";
+				$sql .= "invoice_currency = '$invoice_currency', ";
 				$sql .= "invoice_paid = $invoice_paid, ";
 				$sql .= "invoice_paid_date = $invoice_paid_date, ";
 				$sql .= "invoice_paid_method = $invoice_paid_method, ";
@@ -153,7 +165,7 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 				//set redirect
 				$_SESSION['message'] = $text['message-update'];
 				header("Location: ".(($back != '') ? $back : "invoices.php"));
-				exit;
+				return;
 
 			} //if ($action == "update")
 		} //if ($_POST["persistformvar"] != "true")
@@ -178,6 +190,8 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 			$invoice_paid_method_ref = $row["invoice_paid_method_ref"];
 			$contact_uuid_from = $row["contact_uuid_from"];
 			$contact_uuid_to = $row["contact_uuid_to"];
+			$invoice_purchase_order_number = $row["invoice_purchase_order_number"];
+			$invoice_currency = $row["invoice_currency"];
 			$invoice_notes = $row["invoice_notes"];
 			break; //limit to 1 row
 		}
@@ -190,8 +204,19 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 		}
 	}
 
-//show the header
-	require_once "resources/header.php";
+//set the default currency
+	if (strlen($invoice_currency) == 0) {
+		$invoice_currency = 'USD';
+	}
+
+//get the list of contacts
+	$sql = "select contact_uuid, contact_organization, contact_name_given, contact_name_family from v_contacts ";
+	$sql .= "where domain_uuid = '$domain_uuid' ";
+	$sql .= "order by contact_organization asc ";
+	$prep_statement = $db->prepare(check_sql($sql));
+	$prep_statement->execute();
+	$contacts = $prep_statement->fetchAll(PDO::FETCH_NAMED);
+	unset ($prep_statement, $sql);
 
 //get the default invoice number and contact_uuid_from
 	if ($action == "add") {
@@ -213,6 +238,9 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 	if ($action == "add") {
 		$contact_uuid_to = $_REQUEST['contact_uuid'];
 	}
+
+//show the header
+	require_once "resources/header.php";
 
 //show the content
 	echo "<form method='post' name='frm' action=''>\n";
@@ -257,17 +285,9 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 	echo "	".$text['label-contact_uuid_from']."\n";
 	echo "</td>\n";
 	echo "<td class='vtable' align='left'>\n";
-	$sql = "";
-	$sql .= " select contact_uuid, contact_organization, contact_name_given, contact_name_family from v_contacts ";
-	$sql .= " where domain_uuid = '$domain_uuid' ";
-	$sql .= " order by contact_organization asc ";
-	$prep_statement = $db->prepare(check_sql($sql));
-	$prep_statement->execute();
-	$result = $prep_statement->fetchAll(PDO::FETCH_NAMED);
-	unset ($prep_statement, $sql);
 	echo "<select name=\"contact_uuid_from\" id=\"contact_uuid_from\" class=\"formfld\">\n";
 	echo "<option value=\"\"></option>\n";
-	foreach($result as $row) {
+	foreach($contacts as $row) {
 		$contact_name = '';
 		if (strlen($row['contact_organization']) > 0) {
 			$contact_name = $row['contact_organization'];
@@ -300,17 +320,9 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 	echo "	".$text['label-contact_uuid_to']."\n";
 	echo "</td>\n";
 	echo "<td class='vtable' align='left'>\n";
-	$sql = "";
-	$sql .= " select contact_uuid, contact_organization, contact_name_given, contact_name_family from v_contacts ";
-	$sql .= " where domain_uuid = '$domain_uuid' ";
-	$sql .= " order by contact_organization asc ";
-	$prep_statement = $db->prepare(check_sql($sql));
-	$prep_statement->execute();
-	$result = $prep_statement->fetchAll(PDO::FETCH_NAMED);
-	unset ($prep_statement, $sql);
 	echo "<select name=\"contact_uuid_to\" id=\"contact_uuid_to\" class=\"formfld\">\n";
 	echo "<option value=\"\"></option>\n";
-	foreach($result as $row) {
+	foreach($contacts as $row) {
 		$contact_name = '';
 		if (strlen($row['contact_organization']) > 0) {
 			$contact_name = $row['contact_organization'];
@@ -335,6 +347,28 @@ if (count($_POST)>0 && strlen($_POST["persistformvar"]) == 0) {
 	echo "<br />\n";
 	echo $text['description-contact_uuid_to']." \n";
 	echo "<a href='".PROJECT_PATH."/app/contacts/contact_edit.php?id=".$contact_uuid_to."'>".$text['button-view']."</a>\n";
+	echo "</td>\n";
+	echo "</tr>\n";
+
+	echo "<tr>\n";
+	echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
+	echo "	".$text['label-invoice_purchase_order_number']."\n";
+	echo "</td>\n";
+	echo "<td class='vtable' align='left'>\n";
+	echo "  <input class='formfld' type='text' name='invoice_purchase_order_number' maxlength='255' value='$invoice_purchase_order_number'>\n";
+	echo "<br />\n";
+	echo $text['description-invoice_purchase_order_number']."\n";
+	echo "</td>\n";
+	echo "</tr>\n";
+
+	echo "<tr>\n";
+	echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
+	echo "	".$text['label-invoice_currency']."\n";
+	echo "</td>\n";
+	echo "<td class='vtable' align='left'>\n";
+	echo "  <input class='formfld' type='text' name='invoice_currency' maxlength='255' value='$invoice_currency'>\n";
+	echo "<br />\n";
+	echo $text['description-invoice_currency']."\n";
 	echo "</td>\n";
 	echo "</tr>\n";
 
